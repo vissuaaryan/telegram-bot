@@ -205,4 +205,191 @@ async def get_mail(
             "⏱️ Checking every 5 seconds\n\n"
             "📩 Inbox me koi bhi naya email aayega "
             "to automatically isi Telegram chat me bhej dunga.\n\n"
+            "/stop — Monitoring band karo",
+            parse_mode="HTML"
         )
+
+    except Exception as error:
+        await update.message.reply_text(
+            "❌ <b>Error</b>\n\n"
+            f"<code>{html.escape(str(error))}</code>",
+            parse_mode="HTML"
+        )
+
+
+async def monitor_inbox(
+    context: ContextTypes.DEFAULT_TYPE
+):
+    job = context.job
+
+    chat_id = job.data["chat_id"]
+    token = job.data["token"]
+    seen_messages = job.data["seen_messages"]
+
+    try:
+        messages = await asyncio.to_thread(
+            get_messages,
+            token
+        )
+
+        # Oldest se newest
+        for message in reversed(messages):
+
+            message_id = message.get("id")
+
+            if not message_id:
+                continue
+
+            # Already forwarded email skip
+            if message_id in seen_messages:
+                continue
+
+            # Mark as seen
+            seen_messages.add(message_id)
+
+            # Full email fetch
+            full_message = await asyncio.to_thread(
+                get_full_message,
+                token,
+                message_id
+            )
+
+            subject = full_message.get(
+                "subject",
+                "No subject"
+            )
+
+            intro = full_message.get(
+                "intro",
+                ""
+            )
+
+            text = full_message.get(
+                "text",
+                ""
+            )
+
+            sender = full_message.get(
+                "from",
+                {}
+            )
+
+            sender_address = sender.get(
+                "address",
+                "Unknown"
+            )
+
+            sender_name = sender.get(
+                "name",
+                ""
+            )
+
+            # Email content
+            content = text or intro or "No message content"
+
+            # Telegram HTML safe
+            sender_address = html.escape(
+                str(sender_address)
+            )
+
+            sender_name = html.escape(
+                str(sender_name)
+            )
+
+            subject = html.escape(
+                str(subject)
+            )
+
+            content = html.escape(
+                str(content)
+            )
+
+            # Telegram message length limit
+            content = content[:3500]
+
+            message_text = (
+                "📩 <b>NEW EMAIL RECEIVED</b>\n\n"
+                f"👤 <b>From:</b> "
+                f"{sender_name} "
+                f"&lt;{sender_address}&gt;\n\n"
+                f"📌 <b>Subject:</b> "
+                f"{subject}\n\n"
+                "━━━━━━━━━━━━━━\n\n"
+                f"{content}"
+            )
+
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=message_text,
+                parse_mode="HTML"
+            )
+
+    except Exception as error:
+        print(
+            "Inbox monitor error:",
+            error
+        )
+
+
+async def stop_monitor(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+    job = context.user_data.get(
+        "monitor_job"
+    )
+
+    if job:
+        job.schedule_removal()
+
+        context.user_data["monitor_job"] = None
+
+        await update.message.reply_text(
+            "🛑 Inbox monitoring stopped."
+        )
+    else:
+        await update.message.reply_text(
+            "ℹ️ Koi active inbox monitoring nahi hai."
+        )
+
+
+def main():
+    if not BOT_TOKEN:
+        raise RuntimeError(
+            "BOT_TOKEN Replit Secrets me set nahi hai."
+        )
+
+    app = (
+        ApplicationBuilder()
+        .token(BOT_TOKEN)
+        .build()
+    )
+
+    app.add_handler(
+        CommandHandler(
+            "start",
+            start
+        )
+    )
+
+    app.add_handler(
+        CommandHandler(
+            "get",
+            get_mail
+        )
+    )
+
+    app.add_handler(
+        CommandHandler(
+            "stop",
+            stop_monitor
+        )
+    )
+
+    print("🤖 Bot started...")
+
+    app.run_polling()
+
+
+if __name__ == "__main__":
+    main()
