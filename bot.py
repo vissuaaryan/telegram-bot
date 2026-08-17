@@ -156,8 +156,13 @@ async def get_mail(
         "monitor_job"
     )
 
-    if old_job:
+  if old_job:
+    try:
         old_job.schedule_removal()
+    except Exception:
+        pass
+
+context.user_data["monitor_job"] = None
 
     await update.message.reply_text(
         "⏳ Temporary email create kar raha hoon..."
